@@ -1,0 +1,50 @@
+{
+  "name": "TV Broadcast Remote",
+  "short_name": "TV Remote",
+  "description": "Virtual Television Broadcast Simulator PWA Remote Control",
+  "theme_color": "#00d4ff",
+  "background_color": "#08080f",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "start_url": "/",
+  "lang": "en",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "screenshot-wide.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Remote Control on Desktop"
+    },
+    {
+      "src": "screenshot-narrow.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Remote Control on Mobile"
+    }
+  ],
+  "categories": ["entertainment", "utilities"],
+  "shortcuts": [
+    {
+      "name": "Open Remote",
+      "url": "/",
+      "description": "Launch the TV Remote Control"
+    }
+  ]
+}

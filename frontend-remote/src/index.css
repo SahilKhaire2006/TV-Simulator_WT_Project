@@ -1,0 +1,158 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Google Font import fallback ────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500;600&display=swap');
+
+/* ── Base ────────────────────────────────────────────────────────────────── */
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body, #root {
+    @apply min-h-screen bg-bg text-white font-inter;
+    margin: 0;
+    padding: 0;
+  }
+  ::-webkit-scrollbar        { width: 4px; }
+  ::-webkit-scrollbar-track  { @apply bg-surface; }
+  ::-webkit-scrollbar-thumb  { @apply bg-tvgray rounded-full; }
+}
+
+/* ── Components ─────────────────────────────────────────────────────────── */
+@layer components {
+
+  /* Remote container */
+  .remote-shell {
+    @apply relative mx-auto rounded-[2rem] overflow-hidden;
+    background: linear-gradient(160deg, #1c1c2e 0%, #12121a 60%, #0a0a14 100%);
+    border: 2px solid #2d2d44;
+    box-shadow:
+      0 0 60px rgba(0, 212, 255, 0.08),
+      0 40px 80px rgba(0, 0, 0, 0.8),
+      inset 0 1px 0 rgba(255,255,255,0.05);
+  }
+
+  /* LCD display panel */
+  .lcd-panel {
+    background: linear-gradient(160deg, #0a1628 0%, #0d1f3c 100%);
+    border: 1px solid rgba(0, 212, 255, 0.25);
+    border-radius: 12px;
+    box-shadow:
+      inset 0 2px 12px rgba(0,0,0,0.6),
+      0 0 20px rgba(0, 212, 255, 0.1);
+  }
+
+  /* LCD text */
+  .lcd-text {
+    font-family: 'Orbitron', monospace;
+    color: #00d4ff;
+    text-shadow: 0 0 10px rgba(0, 212, 255, 0.6), 0 0 20px rgba(0, 212, 255, 0.3);
+  }
+
+  /* Number pad buttons */
+  .btn-num {
+    @apply relative flex items-center justify-center rounded-xl cursor-pointer select-none;
+    @apply font-orbitron font-bold text-lg text-white;
+    background: linear-gradient(145deg, #242436, #1a1a28);
+    border: 1px solid #2d2d44;
+    box-shadow:
+      0 4px 8px rgba(0,0,0,0.5),
+      inset 0 1px 0 rgba(255,255,255,0.06);
+    transition: all 0.12s ease;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .btn-num:hover {
+    border-color: rgba(0, 212, 255, 0.4);
+    box-shadow: 0 0 12px rgba(0, 212, 255, 0.2), 0 4px 8px rgba(0,0,0,0.5);
+    transform: translateY(-1px);
+  }
+  .btn-num:active, .btn-num.pressed {
+    transform: translateY(1px) scale(0.96);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.5), inset 0 2px 6px rgba(0,0,0,0.4);
+    background: linear-gradient(145deg, #1a1a28, #242436);
+  }
+
+  /* Control buttons (channel, volume, power, mute) */
+  .btn-ctrl {
+    @apply flex flex-col items-center justify-center gap-1 rounded-xl cursor-pointer select-none;
+    @apply text-xs font-semibold text-muted;
+    border: 1px solid #2d2d44;
+    background: linear-gradient(145deg, #1c1c2e, #141422);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.04);
+    transition: all 0.14s ease;
+  }
+  .btn-ctrl:hover {
+    @apply text-primary;
+    border-color: rgba(0, 212, 255, 0.35);
+    box-shadow: 0 0 14px rgba(0,212,255,0.15), 0 4px 8px rgba(0,0,0,0.4);
+    transform: translateY(-1px);
+  }
+  .btn-ctrl:active {
+    transform: scale(0.94);
+    box-shadow: inset 0 2px 6px rgba(0,0,0,0.5);
+  }
+
+  /* Power button */
+  .btn-power {
+    @apply flex items-center justify-center rounded-full cursor-pointer;
+    background: radial-gradient(circle at 40% 40%, #3b0a0a, #1a0606);
+    border: 2px solid rgba(239, 68, 68, 0.4);
+    box-shadow: 0 0 16px rgba(239,68,68,0.2), inset 0 2px 6px rgba(0,0,0,0.5);
+    transition: all 0.15s ease;
+  }
+  .btn-power:hover {
+    border-color: rgba(239,68,68,0.8);
+    box-shadow: 0 0 28px rgba(239,68,68,0.45);
+    transform: scale(1.06);
+  }
+  .btn-power:active { transform: scale(0.94); }
+  .btn-power.powered-on {
+    background: radial-gradient(circle at 40% 40%, #14532d, #052e16);
+    border-color: rgba(34,197,94,0.6);
+    box-shadow: 0 0 28px rgba(34,197,94,0.35);
+  }
+
+  /* Mute button */
+  .btn-mute {
+    @apply flex items-center justify-center rounded-full cursor-pointer;
+    background: radial-gradient(circle at 40% 40%, #1e1b4b, #13111d);
+    border: 2px solid rgba(124,58,237,0.4);
+    box-shadow: 0 0 16px rgba(124,58,237,0.15), inset 0 2px 6px rgba(0,0,0,0.5);
+    transition: all 0.15s ease;
+  }
+  .btn-mute:hover {
+    border-color: rgba(124,58,237,0.8);
+    box-shadow: 0 0 24px rgba(124,58,237,0.4);
+    transform: scale(1.06);
+  }
+  .btn-mute:active { transform: scale(0.94); }
+  .btn-mute.muted {
+    background: radial-gradient(circle at 40% 40%, #3b1f00, #1a0e00);
+    border-color: rgba(245,158,11,0.6);
+    box-shadow: 0 0 20px rgba(245,158,11,0.3);
+  }
+
+  /* Connection status indicator */
+  .conn-dot {
+    @apply inline-block w-2.5 h-2.5 rounded-full;
+    box-shadow: 0 0 6px currentColor;
+  }
+  .conn-dot.connected    { @apply bg-success text-success; animation: blink 1.5s infinite; }
+  .conn-dot.connecting   { @apply bg-warn text-warn; animation: pulse 1s infinite; }
+  .conn-dot.disconnected { @apply bg-danger text-danger; }
+
+  @keyframes blink {
+    0%,100% { opacity: 1; }
+    50%     { opacity: 0.3; }
+  }
+}
+
+/* ── Utilities ───────────────────────────────────────────────────────────── */
+@layer utilities {
+  .no-tap-highlight { -webkit-tap-highlight-color: transparent; }
+  .text-glow        { text-shadow: 0 0 12px rgba(0,212,255,0.7); }
+  .border-glow      { box-shadow: 0 0 16px rgba(0,212,255,0.3); }
+  .scrollbar-none   { scrollbar-width: none; }
+  .scrollbar-none::-webkit-scrollbar { display: none; }
+}
