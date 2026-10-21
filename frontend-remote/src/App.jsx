@@ -17,7 +17,11 @@ import toast from 'react-hot-toast'
 import { useWebSocket } from './hooks/useWebSocket.js'
 
 // ── Constants ──────────────────────────────────────────────────────────────
-const DEFAULT_WS_URL  = `ws://${window.location.hostname}:8085/tv-simulator/ws/tv`
+const DEFAULT_WS_URL = (() => {
+  // Use wss:// when page is served over HTTPS (e.g. Vercel), ws:// for local HTTP
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${proto}//${window.location.hostname}:8085/tv-simulator/ws/tv`
+})()
 const DIGIT_TIMEOUT   = 1500   // ms to wait before committing typed digits as channel
 
 // ── Channel definitions (mirrors backend catalog) ─────────────────────────
