@@ -54,6 +54,7 @@ export async function apiRequest(path, opts = {}) {
 
   const headers = {
     'Content-Type': 'application/json',
+    'ngrok-skip-browser-warning': 'true',   // bypass ngrok free-tier warning page
     ...opts.headers,
   }
 
