@@ -8,6 +8,98 @@ A full-stack, production-grade broadcast simulation platform featuring:
 
 ---
 
+## 🆕 Features
+
+### ⭐ Favourites (JDBC-backed)
+- Each logged-in user can save their favourite channels to the database
+- Favourites are strictly per-user (proper session handling via token auth)
+- From the Vercel-deployed remote, tap the ⭐ icon to view/manage favourites
+- Tap a favourite to instantly tune the selected TV to that channel
+
+### 🔒 Parental Control
+- Users can lock specific channels (prevents tuning without PIN)
+- A 4-digit PIN can be set to override locked channels
+- When a locked channel is selected, a PIN prompt appears
+- Managed via the 🛡 icon on the remote control
+
+### 📊 Visit History & Recommendations
+- The server tracks how many times each user visits each channel
+- Aggregate visit data is displayed on the admin dashboard with visual bars
+- Channel recommendations are derived from visit frequency
+- Visit data persists across server restarts (MySQL)
+
+### 📺 Commercials (Ads)
+- Ads are stored in MySQL and managed via the admin dashboard
+- Ads can target all channels or a specific channel
+- The TV client shows commercial breaks periodically (every 5 minutes)
+- Admin can create, view, and delete commercials from the dashboard
+
+### 🔐 Authentication
+- Token-based authentication (works cross-origin for Vercel deployment)
+- Default admin account: `admin / admin123`
+- Users can register new accounts from the remote control app
+- Sessions expire after 24 hours
+
+---
+
+## 🗄️ Database Setup
+
+The app auto-creates all tables on startup if MySQL is available. You just need MySQL running.
+
+1. **Install MySQL 8+** (or use XAMPP/MariaDB)
+2. **Edit `backend/src/main/resources/db.properties`:**
+   ```properties
+   db.url=jdbc:mysql://localhost:3306/tv_simulator?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+   db.username=root
+   db.password=your_password
+   ```
+3. **Restart the server** — tables are auto-created and seed data is inserted
+
+If MySQL is not available, the app runs in degraded mode (WebSocket TV control still works, but favourites/parental control/visit history are disabled).
+
+### Database Schema
+
+| Table | Purpose |
+|-------|---------|
+| `users` | User accounts (username, hashed password, role) |
+| `sessions` | Token-based auth sessions (24h expiry) |
+| `favorites` | Per-user favourite channels |
+| `visit_history` | Channel visit counts per user |
+| `parental_control` | Locked channels per user |
+| `user_settings` | Parental PIN and enable flag |
+| `commercials` | Ad content with optional channel targeting |
+
+### REST API Endpoints
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| POST | `/api/auth/register` | Register new user | – |
+| POST | `/api/auth/login` | Login, returns token | – |
+| POST | `/api/auth/logout` | Invalidate session | Token |
+| GET | `/api/auth/me` | Get current user | Token |
+| GET | `/api/favorites` | List user's favourites | Token |
+| POST | `/api/favorites` | Add favourite `{channel:N}` | Token |
+| DELETE | `/api/favorites` | Remove favourite `{channel:N}` | Token |
+| GET | `/api/favorites/check?channel=N` | Check if favourited | Token |
+| POST | `/api/visits` | Record a channel visit `{channel:N}` | Optional |
+| GET | `/api/visits` | User's visit history | Token |
+| GET | `/api/visits/aggregate` | All-user aggregate (admin) | – |
+| GET | `/api/parental/status` | Parental control status | Token |
+| GET | `/api/parental/locked` | List locked channels | Token |
+| POST | `/api/parental/lock` | Lock a channel `{channel:N}` | Token |
+| POST | `/api/parental/unlock` | Unlock a channel `{channel:N}` | Token |
+| POST | `/api/parental/pin` | Set PIN `{pin:"1234"}` | Token |
+| POST | `/api/parental/verify` | Verify PIN `{pin:"1234"}` | Token |
+| POST | `/api/parental/enable` | Toggle `{enabled:true}` | Token |
+| GET | `/api/commercials` | Active commercials | – |
+| GET | `/api/commercials?channel=N` | Ads for a channel | – |
+| GET | `/api/commercials?all=true` | All commercials | Admin |
+| POST | `/api/commercials` | Create ad | Admin |
+| PUT | `/api/commercials` | Update ad | Admin |
+| DELETE | `/api/commercials?id=N` | Delete ad | Admin |
+
+---
+
 ## 🏗️ Project Structure
 
 ```

@@ -13,6 +13,11 @@ export default defineConfig({
         target: 'http://localhost:8085',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, '/tv-simulator/api')
+      },
+      '/ws': {
+        target: 'http://localhost:8085',
+        changeOrigin: true,
+        ws: true
       }
     }
   }

@@ -10,6 +10,7 @@ frontend-remote/dist/
 
 # ── Video files (too large for git) ───────────────────────────────────────
 backend/src/main/webapp/videos/*.mp4
+videos/
 
 # ── IDE / OS ──────────────────────────────────────────────────────────────
 .idea/
@@ -23,3 +24,6 @@ Thumbs.db
 .tools/apache-tomcat-10.1.20/logs/
 .tools/apache-tomcat-10.1.20/work/
 .tools/apache-tomcat-10.1.20/temp/
+
+# ── Database credentials (never commit real passwords) ─────────────────────
+backend/src/main/resources/db.properties

@@ -11,18 +11,28 @@
  *  • Broadcast-to-all mode
  *  • Client selector dropdown with live state
  *  • Settings panel for WebSocket URL
+ *  • ★ Authentication (login/register/logout)
+ *  • ★ Favourites panel (per-user, via JDBC)
+ *  • ★ Parental control (lock channels + PIN override)
+ *  • ★ Visit history recording (feeds admin recommendations)
  */
 import { useState, useCallback, useEffect, useRef } from 'react'
 import toast from 'react-hot-toast'
 import { useWebSocket } from './hooks/useWebSocket.js'
+import { useAuth } from './hooks/useAuth.jsx'
+import { api, getApiBase, setApiBase } from './api/client.js'
+import AuthPanel from './components/AuthPanel.jsx'
+import FavoritesPanel from './components/FavoritesPanel.jsx'
+import ParentalControlPanel from './components/ParentalControlPanel.jsx'
 
 // ── Constants ──────────────────────────────────────────────────────────────
 const DEFAULT_WS_URL = (() => {
-  // Use wss:// when page is served over HTTPS (e.g. Vercel), ws:// for local HTTP
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  // In production (Vercel), user can configure the WS URL in settings.
+  // Default points to the backend host on port 8085.
   return `${proto}//${window.location.hostname}:8085/tv-simulator/ws/tv`
 })()
-const DIGIT_TIMEOUT   = 1500   // ms to wait before committing typed digits as channel
+const DIGIT_TIMEOUT = 1500
 
 // ── Channel definitions (mirrors backend catalog) ─────────────────────────
 const CHANNELS = [
@@ -52,7 +62,6 @@ const CHANNELS = [
   { number: 24, name: 'Indie Shorts',     genre: 'Indie'       },
 ]
 
-// ── Helpers ────────────────────────────────────────────────────────────────
 const getChannelInfo = (num) =>
   CHANNELS.find(c => c.number === num) ?? { name: 'Signal Lost', genre: 'No Signal' }
 
@@ -62,10 +71,16 @@ const padChannel = (num) => String(num).padStart(2, '0')
 // Component
 // ─────────────────────────────────────────────────────────────────────────────
 export default function App() {
-  // WebSocket
-  const [wsUrl, setWsUrl]       = useState(DEFAULT_WS_URL)
+  // ── Auth ───────────────────────────────────────────────────────────────────
+  const { user, logout } = useAuth()
+
+  // ── WebSocket ──────────────────────────────────────────────────────────────
+  const [wsUrl, setWsUrl]           = useState(DEFAULT_WS_URL)
   const [wsUrlInput, setWsUrlInput] = useState(DEFAULT_WS_URL)
   const [showSettings, setShowSettings] = useState(false)
+  const [showFavorites, setShowFavorites] = useState(false)
+  const [showParental, setShowParental] = useState(false)
+  const [showAccount, setShowAccount]   = useState(false)
 
   // Connected TV clients list
   const [clients, setClients]   = useState([])
@@ -87,11 +102,36 @@ export default function App() {
   const [showInfo, setShowInfo] = useState(false)
   const [clock, setClock]       = useState(new Date())
 
+  // Parental control state (cached from API)
+  const [lockedChannels, setLockedChannels] = useState(new Set())
+  const [parentalEnabled, setParentalEnabled] = useState(false)
+  const [showPinPrompt, setShowPinPrompt]   = useState(false)
+  const [pinInput, setPinInput]             = useState('')
+  const [pendingChannel, setPendingChannel] = useState(null)
+
+  // API base URL (for settings)
+  const [apiBaseInput, setApiBaseInput] = useState(getApiBase())
+
   // Clock tick
   useEffect(() => {
     const t = setInterval(() => setClock(new Date()), 1000)
     return () => clearInterval(t)
   }, [])
+
+  // ── Fetch parental control status when user logs in ────────────────────────
+  useEffect(() => {
+    if (!user) {
+      setLockedChannels(new Set())
+      setParentalEnabled(false)
+      return
+    }
+    api.getParentalStatus()
+      .then(data => {
+        setParentalEnabled(data.enabled)
+        setLockedChannels(new Set(data.lockedChannels || []))
+      })
+      .catch(() => {})
+  }, [user])
 
   // ── WebSocket message handler ─────────────────────────────────────────────
   const handleMessage = useCallback((msg) => {
@@ -102,16 +142,11 @@ export default function App() {
 
       case 'CLIENT_LIST':
         setClients(msg.clients ?? [])
-        // Sync state map
         setClientStates(prev => {
           const next = { ...prev }
           ;(msg.clients ?? []).forEach(c => { next[c.clientId] = c })
           return next
         })
-        // Auto-select first if none selected
-        if (msg.clients?.length > 0 && targetId === -1) {
-          // keep broadcast as default; user can change
-        }
         break
 
       case 'STATE_UPDATE':
@@ -126,17 +161,20 @@ export default function App() {
             muted:       msg.muted,
           }
         }))
-        // Also refresh clients list entry
         setClients(prev =>
           prev.map(c => c.clientId === msg.clientId
             ? { ...c, channel: msg.channel, volume: msg.volume, powered: msg.powered, muted: msg.muted }
             : c
           )
         )
+
+        // ── Record visit history when channel changes ──────────────────────
+        // Fire-and-forget; the backend handles user identification via token.
+        api.recordVisit(msg.channel).catch(() => {})
         break
 
       case 'PONG':
-        break  // silently handle keepalive
+        break
 
       case 'ERROR':
         toast.error('Server: ' + (msg.payload ?? 'Unknown error'))
@@ -145,19 +183,60 @@ export default function App() {
       default:
         console.log('[App] Unhandled WS message:', msg)
     }
-  }, [targetId])
+  }, [])
 
   const { status, send } = useWebSocket(wsUrl, handleMessage)
 
-  // ── Command sender ────────────────────────────────────────────────────────
+  // ── Command sender with parental control check ──────────────────────────────
   const sendCommand = useCallback((command, extra = {}) => {
+    // If user is logged in and parental control is enabled, check for locked channels
+    if (user && parentalEnabled && command === 'CHANNEL_SET' && extra.channel != null) {
+      if (lockedChannels.has(extra.channel)) {
+        // Channel is locked – prompt for PIN
+        setPendingChannel(extra.channel)
+        setShowPinPrompt(true)
+        setPinInput('')
+        return
+      }
+    }
     send({
       type:     'COMMAND',
       command,
       clientId: targetId,
       ...extra,
     })
-  }, [send, targetId])
+  }, [send, targetId, user, parentalEnabled, lockedChannels])
+
+  // ── PIN verification for locked channel ─────────────────────────────────────
+  const verifyPinAndTune = async () => {
+    try {
+      await api.verifyPin(pinInput)
+      // PIN accepted – tune to the locked channel
+      send({
+        type:     'COMMAND',
+        command:  'CHANNEL_SET',
+        clientId: targetId,
+        channel:  pendingChannel,
+      })
+      toast.success('PIN accepted – tuning to locked channel')
+      setShowPinPrompt(false)
+      setPinInput('')
+      setPendingChannel(null)
+    } catch (e) {
+      toast.error('Invalid PIN')
+    }
+  }
+
+  // ── Tune to channel (used by Favorites panel) ───────────────────────────────
+  const tuneToChannel = useCallback((channel) => {
+    if (user && parentalEnabled && lockedChannels.has(channel)) {
+      setPendingChannel(channel)
+      setShowPinPrompt(true)
+      setPinInput('')
+      return
+    }
+    send({ type: 'COMMAND', command: 'CHANNEL_SET', clientId: targetId, channel })
+  }, [send, targetId, user, parentalEnabled, lockedChannels])
 
   // ── Button press visual feedback ──────────────────────────────────────────
   const pressButton = useCallback((key, fn) => {
@@ -181,7 +260,7 @@ export default function App() {
           }
           setDigitBuffer('')
         }, DIGIT_TIMEOUT)
-        return next.length > 2 ? digit : next  // max 2 digits
+        return next.length > 2 ? digit : next
       })
     })
   }, [pressButton, sendCommand])
@@ -203,6 +282,12 @@ export default function App() {
   // ── Settings save ─────────────────────────────────────────────────────────
   const saveSettings = () => {
     setWsUrl(wsUrlInput.trim())
+    // Only save API base in production (not localhost – Vite proxy handles it there)
+    const isLocalDev = window.location.hostname === 'localhost' ||
+                       window.location.hostname === '127.0.0.1'
+    if (!isLocalDev) {
+      setApiBase(apiBaseInput.trim())
+    }
     setShowSettings(false)
     toast.success('Settings saved – reconnecting…')
   }
@@ -210,7 +295,7 @@ export default function App() {
   // ── Keyboard shortcut support ─────────────────────────────────────────────
   useEffect(() => {
     const handleKey = (e) => {
-      if (showSettings || showInfo) return
+      if (showSettings || showInfo || showPinPrompt) return
       if (e.key >= '0' && e.key <= '9') { handleDigit(e.key); return }
       switch (e.key) {
         case 'ArrowUp':   e.preventDefault(); pressButton('ch+', () => sendCommand('CHANNEL_UP'));   break
@@ -223,7 +308,7 @@ export default function App() {
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [handleDigit, pressButton, sendCommand, showSettings, showInfo])
+  }, [handleDigit, pressButton, sendCommand, showSettings, showInfo, showPinPrompt])
 
   // ──────────────────────────────────────────────────────────────────────────
   // RENDER
@@ -240,6 +325,27 @@ export default function App() {
           <p className="text-muted text-xs mt-0.5">Virtual Simulator Remote</p>
         </div>
         <div className="flex items-center gap-2">
+          {/* Account / Auth button */}
+          <button
+            onClick={() => setShowAccount(!showAccount)}
+            className={`w-8 h-8 rounded-lg border flex items-center justify-center text-sm transition-colors
+              ${user
+                ? 'border-success/40 text-success'
+                : 'border-tvgray text-muted hover:text-primary hover:border-primary'}`}
+            title={user ? `Logged in as ${user.username}` : 'Login / Register'}
+          >
+            {user ? '👤' : '🔒'}
+          </button>
+          <button
+            onClick={() => setShowFavorites(!showFavorites)}
+            className="w-8 h-8 rounded-lg border border-tvgray flex items-center justify-center text-muted hover:text-primary hover:border-primary transition-colors text-sm"
+            title="Favourites"
+          >⭐</button>
+          <button
+            onClick={() => setShowParental(!showParental)}
+            className="w-8 h-8 rounded-lg border border-tvgray flex items-center justify-center text-muted hover:text-primary hover:border-primary transition-colors text-sm"
+            title="Parental Control"
+          >🛡</button>
           <button
             onClick={() => setShowInfo(!showInfo)}
             className="w-8 h-8 rounded-lg border border-tvgray flex items-center justify-center text-muted hover:text-primary hover:border-primary transition-colors text-sm"
@@ -253,6 +359,34 @@ export default function App() {
         </div>
       </header>
 
+      {/* ── Account panel (login/register or user info) ──────────────────── */}
+      {showAccount && (
+        <div className="w-full max-w-sm mb-4 animate-slide-up">
+          {user ? (
+            <div className="bg-surface2 border border-tvgray rounded-xl p-4">
+              <h2 className="font-orbitron text-primary text-xs mb-3 tracking-wider">👤 ACCOUNT</h2>
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <div className="text-sm text-white font-semibold">{user.username}</div>
+                  <div className="text-xs text-muted">{user.role === 'admin' ? 'Administrator' : 'User'}</div>
+                </div>
+                <span className={`text-xs px-2 py-0.5 rounded-full ${user.role === 'admin' ? 'bg-secondary/20 text-secondary' : 'bg-primary/20 text-primary'}`}>
+                  {user.role}
+                </span>
+              </div>
+              <button
+                onClick={() => { logout(); setShowAccount(false); toast.success('Logged out') }}
+                className="w-full py-2 rounded-lg border border-danger/40 text-danger text-sm hover:bg-danger/10 transition-colors"
+              >
+                Logout
+              </button>
+            </div>
+          ) : (
+            <AuthPanel />
+          )}
+        </div>
+      )}
+
       {/* ── Settings panel ───────────────────────────────────────────────── */}
       {showSettings && (
         <div className="w-full max-w-sm mb-4 bg-surface2 border border-tvgray rounded-xl p-4 animate-slide-up">
@@ -261,9 +395,17 @@ export default function App() {
           <input
             value={wsUrlInput}
             onChange={e => setWsUrlInput(e.target.value)}
-            className="w-full bg-surface border border-tvgray rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-primary transition-colors"
+            className="w-full bg-surface border border-tvgray rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-primary transition-colors mb-3"
             placeholder="ws://localhost:8085/tv-simulator/ws/tv"
           />
+          <label className="block text-muted text-xs mb-1">API Base URL (backend host – production only)</label>
+          <input
+            value={apiBaseInput}
+            onChange={e => setApiBaseInput(e.target.value)}
+            className="w-full bg-surface border border-tvgray rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-primary transition-colors"
+            placeholder="https://your-backend.com/tv-simulator"
+          />
+          <p className="text-muted text-xs mt-1">In dev mode the Vite proxy is used automatically. Set this only for production (Vercel).</p>
           <div className="flex gap-2 mt-3">
             <button
               onClick={saveSettings}
@@ -274,6 +416,26 @@ export default function App() {
               className="px-4 py-2 rounded-lg border border-tvgray text-muted text-sm hover:text-primary hover:border-primary transition-colors"
             >Cancel</button>
           </div>
+        </div>
+      )}
+
+      {/* ── Favorites panel ─────────────────────────────────────────────── */}
+      {showFavorites && (
+        <div className="w-full max-w-sm mb-4 animate-slide-up">
+          <FavoritesPanel
+            currentChannel={currentState?.channel}
+            onTuneTo={tuneToChannel}
+          />
+        </div>
+      )}
+
+      {/* ── Parental control panel ─────────────────────────────────────── */}
+      {showParental && (
+        <div className="w-full max-w-sm mb-4 animate-slide-up">
+          <ParentalControlPanel
+            onLockedChannelsChange={setLockedChannels}
+            onEnabledChange={setParentalEnabled}
+          />
         </div>
       )}
 
@@ -288,6 +450,15 @@ export default function App() {
                 <span>{v}</span>
               </div>
             ))}
+          </div>
+          <div className="mt-3 pt-3 border-t border-tvgray/50">
+            <h3 className="font-orbitron text-primary text-xs mb-2">FEATURES</h3>
+            <ul className="text-xs text-muted space-y-1">
+              <li>⭐ <strong>Favourites:</strong> Save channels per user (JDBC)</li>
+              <li>🔒 <strong>Parental Control:</strong> Lock channels + PIN</li>
+              <li>📊 <strong>Visit History:</strong> Tracks channel visits</li>
+              <li>📺 <strong>Commercials:</strong> Ads from database</li>
+            </ul>
           </div>
           <button onClick={() => setShowInfo(false)} className="mt-3 text-xs text-muted hover:text-primary transition-colors">Close</button>
         </div>
@@ -562,7 +733,7 @@ export default function App() {
         {/* ── Bottom brand strip ────────────────────────────────────────── */}
         <div className="border-t border-tvgray/30 pt-3 flex items-center justify-between">
           <span className="font-orbitron text-xs text-muted tracking-widest">TV·SIM</span>
-          <span className="text-xs text-muted">v1.0.0</span>
+          <span className="text-xs text-muted">v2.0.0</span>
         </div>
 
       </div>{/* /remote-shell */}
@@ -571,6 +742,39 @@ export default function App() {
       {digitBuffer && (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 bg-surface2 border border-primary rounded-xl px-6 py-3 font-orbitron text-primary text-2xl font-black shadow-glowLg animate-slide-up z-50">
           CH {digitBuffer.padStart(2, '0')}
+        </div>
+      )}
+
+      {/* ── PIN prompt modal (parental control) ─────────────────────────────── */}
+      {showPinPrompt && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
+          <div className="bg-surface2 border border-primary/40 rounded-2xl p-6 max-w-xs w-full shadow-glowLg">
+            <h2 className="font-orbitron text-primary text-sm mb-2 text-center">🔒 CHANNEL LOCKED</h2>
+            <p className="text-muted text-xs text-center mb-4">
+              CH {pendingChannel ? padChannel(pendingChannel) : ''} is locked.
+              <br/>Enter your PIN to continue.
+            </p>
+            <input
+              type="password"
+              value={pinInput}
+              onChange={e => setPinInput(e.target.value.replace(/\D/g, '').slice(0, 4))}
+              onKeyDown={e => { if (e.key === 'Enter') verifyPinAndTune() }}
+              placeholder="••••"
+              className="w-full bg-surface border border-tvgray rounded-lg px-3 py-3 text-center text-white font-mono text-xl tracking-[0.5em] focus:outline-none focus:border-primary mb-3"
+              maxLength={4}
+              autoFocus
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={verifyPinAndTune}
+                className="flex-1 py-2 rounded-lg bg-primary text-bg font-semibold text-sm hover:opacity-90 transition-opacity"
+              >Unlock</button>
+              <button
+                onClick={() => { setShowPinPrompt(false); setPinInput(''); setPendingChannel(null) }}
+                className="px-4 py-2 rounded-lg border border-tvgray text-muted text-sm hover:text-white transition-colors"
+              >Cancel</button>
+            </div>
+          </div>
         </div>
       )}
 

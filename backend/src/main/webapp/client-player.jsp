@@ -327,6 +327,75 @@
         }
         @keyframes pulsePrompt { 0%,100%{transform:translateX(-50%) scale(1)} 50%{transform:translateX(-50%) scale(1.03)} }
         .audio-prompt.visible { display: flex; }
+
+        /* ── Commercial Ad Overlay ─────────────────────────────────────────── */
+        .commercial-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.92);
+            z-index: 40;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+            gap: 16px;
+        }
+        .commercial-overlay.visible { display: flex; }
+        .commercial-overlay .ad-label {
+            position: absolute;
+            top: 16px;
+            left: 16px;
+            background: rgba(239, 68, 68, 0.9);
+            color: #fff;
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            padding: 4px 12px;
+            border-radius: 4px;
+            letter-spacing: 0.1em;
+        }
+        .commercial-overlay .ad-title {
+            font-family: var(--font-mono);
+            font-size: 1.8rem;
+            font-weight: 900;
+            color: var(--primary);
+            text-shadow: var(--glow);
+            text-align: center;
+        }
+        .commercial-overlay .ad-content {
+            font-family: var(--font-body);
+            font-size: 1.1rem;
+            color: var(--text);
+            text-align: center;
+            max-width: 600px;
+            line-height: 1.6;
+        }
+        .commercial-overlay .ad-timer {
+            position: absolute;
+            bottom: 16px;
+            right: 16px;
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            color: var(--muted);
+        }
+        .commercial-overlay .ad-skip {
+            position: absolute;
+            bottom: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--primary);
+            color: var(--bg);
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            padding: 8px 24px;
+            border-radius: 20px;
+            border: none;
+            cursor: pointer;
+            font-weight: 700;
+            display: none;
+        }
+        .commercial-overlay .ad-skip.visible { display: block; }
+        .commercial-overlay .ad-skip:hover { opacity: 0.85; }
     </style>
 </head>
 <body>
@@ -391,6 +460,15 @@
 
         <!-- Mute badge -->
         <div class="mute-badge" id="muteBadge">🔇 MUTED</div>
+
+        <!-- Commercial Ad Overlay -->
+        <div class="commercial-overlay" id="commercialOverlay">
+            <span class="ad-label">📢 ADVERTISEMENT</span>
+            <div class="ad-title" id="adTitle"></div>
+            <div class="ad-content" id="adContent"></div>
+            <span class="ad-timer" id="adTimer"></span>
+            <button class="ad-skip" id="adSkip" onclick="closeCommercial()">Skip Ad →</button>
+        </div>
 
     </div><!-- /screen-container -->
 
@@ -993,6 +1071,75 @@ setInterval(() => {
     }
 }, 30000);
 
+// ── Commercial Ad System ───────────────────────────────────────────────────
+// Fetches commercials from the backend (JDBC-backed) and shows them
+// periodically as an overlay on the TV screen. Ads are displayed every
+// 5 minutes; each ad shows for its configured duration then auto-dismisses.
+let commercialTimer = null;
+let adShowTimer = null;
+const COMMERCIAL_INTERVAL = 5 * 60 * 1000; // 5 minutes between ad breaks
+const ctxPathForAds = '<%= request.getContextPath() %>';
+
+async function showCommercialBreak(channelNumber) {
+    try {
+        const resp = await fetch(ctxPathForAds + '/api/commercials?channel=' + channelNumber);
+        if (!resp.ok) return;
+        const ads = await resp.json();
+        if (!ads || ads.length === 0) return;
+
+        // Show first ad
+        const ad = ads[Math.floor(Math.random() * ads.length)];
+        const overlay = document.getElementById('commercialOverlay');
+        const adTitleEl = document.getElementById('adTitle');
+        const adContentEl = document.getElementById('adContent');
+        const adTimerEl = document.getElementById('adTimer');
+        const adSkipBtn = document.getElementById('adSkip');
+
+        adTitleEl.textContent = ad.title || 'Advertisement';
+        adContentEl.textContent = ad.content || '';
+        overlay.classList.add('visible');
+
+        // Countdown timer
+        let remaining = ad.durationSeconds || 15;
+        adTimerEl.textContent = remaining + 's';
+        adSkipBtn.classList.remove('visible');
+
+        const countdown = setInterval(() => {
+            remaining--;
+            adTimerEl.textContent = remaining + 's';
+            if (remaining <= 3) {
+                adSkipBtn.classList.add('visible');
+            }
+            if (remaining <= 0) {
+                clearInterval(countdown);
+                closeCommercial();
+            }
+        }, 1000);
+
+        // Store the interval ID for cleanup
+        overlay.dataset.countdown = countdown;
+    } catch (e) {
+        console.log('[Commercials] Could not load:', e.message);
+    }
+}
+
+function closeCommercial() {
+    const overlay = document.getElementById('commercialOverlay');
+    overlay.classList.remove('visible');
+    const cd = overlay.dataset.countdown;
+    if (cd) { clearInterval(parseInt(cd)); delete overlay.dataset.countdown; }
+}
+
+// Schedule recurring commercial breaks
+function startCommercialLoop() {
+    if (commercialTimer) clearInterval(commercialTimer);
+    commercialTimer = setInterval(() => {
+        if (tvState.powered && tvState.channel) {
+            showCommercialBreak(tvState.channel);
+        }
+    }, COMMERCIAL_INTERVAL);
+}
+
 // ── Boot ──────────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
     // Load initial channel
@@ -1000,6 +1147,8 @@ window.addEventListener('DOMContentLoaded', () => {
     loadStream(1, initial.streamUrl);
     showChannelBanner(1);
     connect();
+    // Start commercial ad loop (ads every 5 minutes)
+    startCommercialLoop();
 });
 </script>
 </body>

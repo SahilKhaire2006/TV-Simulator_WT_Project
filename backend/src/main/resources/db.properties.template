@@ -1,0 +1,7 @@
+# Database configuration for TV Broadcast Simulator
+# Copy this file to db.properties and fill in your MySQL credentials:
+#   cp db.properties.template db.properties
+
+db.url=jdbc:mysql://localhost:3306/tv_simulator?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+db.username=root
+db.password=YOUR_MYSQL_PASSWORD_HERE
